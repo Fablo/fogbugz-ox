@@ -122,7 +122,7 @@ impl<'de> Deserialize<'de> for Date {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(s.parse::<Date>().unwrap())
+        s.parse::<Date>().map_err(serde::de::Error::custom)
     }
 }
 

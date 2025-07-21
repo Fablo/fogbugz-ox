@@ -1,36 +1,45 @@
-use std::fmt;
-
-use serde::{
-    de::{self, Visitor},
-    Deserialize, Serialize,
-};
+use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
-use strum::{AsRefStr, Display};
+use strum::{AsRefStr, Display, EnumString};
 
-#[derive(Debug, AsRefStr, Display)]
+#[derive(Debug, AsRefStr, Display, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum Column {
-    #[strum(serialize = "ixBug")]
+    #[strum(serialize = "ixBug", to_string = "ixBug")]
+    #[strum(serialize = "caseid")]
     CaseId,
-    #[strum(serialize = "sTitle")]
+    #[strum(serialize = "sTitle", to_string = "sTitle")]
+    #[strum(serialize = "title")]
     Title,
-    #[strum(serialize = "sHtmlBody")]
+    #[strum(serialize = "sHtmlBody", to_string = "sHtmlBody")]
+    #[strum(serialize = "body")]
     Body,
-    #[strum(serialize = "events")]
+    #[strum(serialize = "events", to_string = "events")]
     Events,
-    #[strum(serialize = "sProject")]
+    #[strum(serialize = "sProject", to_string = "sProject")]
+    #[strum(serialize = "project")]
     Project,
-    #[strum(serialize = "ixProject")]
+    #[strum(serialize = "ixProject", to_string = "ixProject")]
+    #[strum(serialize = "projectid")]
     ProjectId,
-    #[strum(serialize = "sArea")]
+    #[strum(serialize = "sArea", to_string = "sArea")]
+    #[strum(serialize = "area")]
     Area,
-    #[strum(serialize = "ixPriority")]
+    #[strum(serialize = "ixPriority", to_string = "ixPriority")]
+    #[strum(serialize = "priority")]
     Priority,
-    #[strum(serialize = "ixStatus")]
+    #[strum(serialize = "ixStatus", to_string = "ixStatus")]
+    #[strum(serialize = "status")]
     Status,
-    #[strum(serialize = "ixCategory")]
+    #[strum(serialize = "ixCategory", to_string = "ixCategory")]
+    #[strum(serialize = "category")]
     Category,
-    #[strum(serialize = "fOpen")]
+    #[strum(serialize = "fOpen", to_string = "fOpen")]
+    #[strum(serialize = "isopen")]
     IsOpen,
+    #[strum(serialize = "customFields", to_string = "customFields")]
+    #[strum(serialize = "customfields")]
+    CustomFields,
 }
 
 #[derive(Debug, Deserialize_repr, strum::Display)]
@@ -45,6 +54,17 @@ pub enum Category {
     Emergency = 6,
 }
 
+impl Serialize for Category {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Use the Display trait implementation (derived via strum::Display)
+        // to serialize the enum variant as a string.
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[derive(Debug, Deserialize_repr, strum::Display)]
 #[repr(u8)]
 pub enum Priority {
@@ -57,6 +77,17 @@ pub enum Priority {
     DontFix = 7,
 }
 
+impl Serialize for Priority {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Use the Display trait implementation (derived via strum::Display)
+        // to serialize the enum variant as a string.
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[derive(Debug, strum::Display)]
 pub enum Status {
     Active,
@@ -66,6 +97,7 @@ pub enum Status {
     WontReview,
     AbandonedNoConsensus,
 }
+
 impl<'de> Deserialize<'de> for Status {
     fn deserialize<D>(deserializer: D) -> Result<Status, D::Error>
     where
@@ -88,6 +120,18 @@ impl<'de> Deserialize<'de> for Status {
         }
     }
 }
+
+impl Serialize for Status {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Use the Display trait implementation (derived via strum::Display)
+        // to serialize the enum variant as a string.
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 // //       {
 // //         "ixStatus": 26,
 // //         "sStatus": "Active",

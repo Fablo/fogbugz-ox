@@ -1,49 +1,51 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use bon::Builder;
+use chrono::{DateTime, Utc};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
 use thiserror::Error;
 
 use crate::{
     enums::{Category, Column, Priority, Status},
-    FogbugzApi, ResponseError,
+    FogBugzClient, ResponseError,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Builder)]
+#[builder(state_mod(vis = "pub(crate)"))]
 pub struct CaseDetailsRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(field)]
+    cols: Option<Vec<String>>,
     #[serde(rename = "q")]
     case_id: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cols: Option<Vec<String>>,
-    token: String,
     #[serde(skip)]
-    api: FogbugzApi,
+    client: FogBugzClient,
 }
 
-#[derive(Debug)]
-pub struct CaseDetailsRequestBuilder {
-    case_id: Option<u64>,
-    cols: Option<Vec<String>>,
-    api: Option<FogbugzApi>,
-}
-
-impl Default for CaseDetailsRequestBuilder {
-    fn default() -> Self {
-        Self {
-            case_id: None,
-            cols: Some(vec![
-                Column::CaseId.to_string(),
-                Column::Title.to_string(),
-                Column::Events.to_string(),
-                Column::Project.to_string(),
-                Column::Area.to_string(),
-                Column::Priority.to_string(),
-                Column::Status.to_string(),
-                Column::Category.to_string(),
-                Column::IsOpen.to_string(),
-            ]),
-            api: None,
+impl<S: case_details_request_builder::State> CaseDetailsRequestBuilder<S> {
+    pub fn add_col(mut self, col: Column) -> Self {
+        match &mut self.cols {
+            Some(cols) => cols.push(col.to_string()),
+            None => self.cols = Some(vec![col.to_string()]),
         }
+        self
+    }
+    pub fn cols(mut self, cols: &[Column]) -> Self {
+        self.cols = Some(cols.iter().map(|s| s.to_string()).collect());
+        self
+    }
+    pub fn default_cols(mut self) -> Self {
+        self.cols = Some(vec![
+            Column::CaseId.to_string(),
+            Column::Title.to_string(),
+            Column::Events.to_string(),
+            Column::Project.to_string(),
+            Column::Area.to_string(),
+            Column::Priority.to_string(),
+            Column::Status.to_string(),
+            Column::Category.to_string(),
+            Column::IsOpen.to_string(),
+        ]);
+        self
     }
 }
 
@@ -55,7 +57,7 @@ pub enum CaseDetailsRequestBuilderError {
     ApiNotSpecified,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Attachment {
     #[serde(rename = "sFileName")]
     pub file_name: String,
@@ -82,6 +84,17 @@ pub enum EventType {
     Emailed = 15,
     ReleaseNoted = 16,
     DeletedAttachment = 17,
+}
+
+impl Serialize for EventType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Use the Display trait implementation (derived via strum::Display)
+        // to serialize the enum variant as a string.
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 impl<'de> Deserialize<'de> for EventType {
@@ -113,7 +126,7 @@ impl<'de> Deserialize<'de> for EventType {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
     #[serde(rename = "evt")]
     pub event_type: EventType,
@@ -132,7 +145,7 @@ pub struct Event {
     pub content: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CaseDetails {
     #[serde(rename = "ixBug")]
     pub case_id: u64,
@@ -151,63 +164,26 @@ pub struct CaseDetails {
     #[serde(rename = "ixCategory")]
     pub category: Category,
     pub events: Vec<Event>,
-}
-
-impl CaseDetailsRequestBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn case_id(mut self, ticket_number: u64) -> Self {
-        self.case_id = Some(ticket_number);
-        self
-    }
-    pub fn cols(mut self, cols: Vec<Column>) -> Self {
-        self.cols = Some(cols.into_iter().map(|s| s.to_string()).collect());
-        self
-    }
-    pub fn add_col(mut self, col: Column) -> Self {
-        if let Some(cols) = &mut self.cols {
-            cols.push(col.to_string())
-        } else {
-            self.cols = Some(vec![col.to_string()]);
-        }
-        self
-    }
-    pub fn api(mut self, api: FogbugzApi) -> Self {
-        self.api = Some(api);
-        self
-    }
-    pub fn build(self) -> Result<CaseDetailsRequest, CaseDetailsRequestBuilderError> {
-        let ticket_number = self
-            .case_id
-            .ok_or(CaseDetailsRequestBuilderError::TicketNumberNotSpecified)?;
-        let api = self
-            .api
-            .ok_or(CaseDetailsRequestBuilderError::ApiNotSpecified)?;
-        Ok(CaseDetailsRequest {
-            case_id: ticket_number,
-            cols: self.cols,
-            token: api.api_key.clone(),
-            api,
-        })
-    }
+    #[serde(rename = "customFields", skip_serializing_if = "Option::is_none")]
+    pub custom_fields: Option<Vec<String>>,
 }
 
 impl CaseDetailsRequest {
-    pub fn builder() -> CaseDetailsRequestBuilder {
-        CaseDetailsRequestBuilder::new()
-    }
     pub async fn send(&self) -> Result<CaseDetails, ResponseError> {
-        let url = Url::parse(&self.api.url)?.join("api/search")?;
+        let url = Url::parse(&self.client.url)?.join("api/search")?;
         #[cfg(feature = "leaky-bucket")]
-        self.api.limiter.acquire_one().await;
+        if let Some(ref limiter) = self.client.limiter {
+            limiter.acquire_one().await;
+        }
+        let mut body = serde_json::to_value(self)?;
+        body["token"] = self.client.api_key.clone().into();
         let response = self
-            .api
+            .client
             .client
             .post(url)
             .header("Content-Type", "application/json")
-            .bearer_auth(&self.api.api_key)
-            .json(&self)
+            .bearer_auth(&self.client.api_key)
+            .json(&body)
             .send()
             .await?;
 
@@ -228,8 +204,7 @@ impl CaseDetailsRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::FogbugzApiBuilder;
+    use crate::FogBugzClient;
 
     #[tokio::test]
     async fn test_case_details_request() {
@@ -239,19 +214,18 @@ mod tests {
             .initial(1)
             .interval(std::time::Duration::from_secs(1))
             .build();
-        let api = FogbugzApiBuilder::new()
+        #[cfg(feature = "leaky-bucket")]
+        let api = FogBugzClient::builder()
             .url("https://retailic.fogbugz.com")
             .api_key(api_key)
             .limiter(limiter)
-            .build()
-            .unwrap();
-        let request = api
-            .case_details()
-            .case_id(61331)
-            .add_col(Column::Events)
-            .add_col(Column::Body)
-            .build()
-            .unwrap();
+            .build();
+        #[cfg(not(feature = "leaky-bucket"))]
+        let api = FogBugzClient::builder()
+            .url("https://retailic.fogbugz.com")
+            .api_key(api_key)
+            .build();
+        let request = api.case_details().case_id(61331).default_cols().build();
         let res = request.send().await.unwrap();
         dbg!(res);
     }

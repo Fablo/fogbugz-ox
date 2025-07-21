@@ -1,44 +1,45 @@
+pub mod api_client;
 pub mod case_details;
+pub mod case_management;
 pub mod date;
 pub mod enums;
-pub mod export;
+pub mod filter;
 pub mod list_cases;
 pub mod list_intervals;
+pub mod organization;
 pub mod query;
 pub mod search;
+pub mod time_tracking;
 
 use core::fmt;
+#[cfg(feature = "leaky-bucket")]
 use std::sync::Arc;
 
+use bon::Builder;
 #[cfg(feature = "leaky-bucket")]
 use leaky_bucket::RateLimiter;
 use thiserror::Error;
 
-#[derive(Clone)]
-pub struct FogbugzApi {
+#[derive(Clone, Builder)]
+pub struct FogBugzClient {
+    #[builder(into)]
     pub url: String,
+    #[builder(into)]
     pub api_key: String,
     #[cfg(feature = "leaky-bucket")]
-    limiter: Arc<RateLimiter>,
+    #[builder(into)]
+    limiter: Option<Arc<RateLimiter>>,
+    #[builder(default)]
     pub client: reqwest::Client,
 }
 
-impl fmt::Debug for FogbugzApi {
+impl fmt::Debug for FogBugzClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FogbugzApi")
+        f.debug_struct("FogbugzClient")
             .field("url", &self.url)
             .field("api_key", &"********")
             .finish()
     }
-}
-
-#[derive(Default)]
-pub struct FogbugzApiBuilder {
-    url: Option<String>,
-    api_key: Option<String>,
-    #[cfg(feature = "leaky-bucket")]
-    limiter: Option<RateLimiter>,
-    pub client: Option<reqwest::Client>,
 }
 
 #[derive(Debug, Error)]
@@ -52,61 +53,119 @@ pub enum FogbugzApiBuilderError {
     MissingLimiter,
 }
 
-impl FogbugzApi {
-    pub fn builder() -> FogbugzApiBuilder {
-        FogbugzApiBuilder::default()
+impl FogBugzClient {
+    pub fn new(url: impl Into<String>, api_key: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            api_key: api_key.into(),
+            client: reqwest::Client::default(),
+        }
     }
-}
-
-impl FogbugzApiBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn url(mut self, url: impl AsRef<str>) -> Self {
-        self.url = Some(url.as_ref().to_string());
-        self
-    }
-    pub fn api_key(mut self, api_key: impl AsRef<str>) -> Self {
-        self.api_key = Some(api_key.as_ref().to_string());
-        self
-    }
-    pub fn client(mut self, client: &reqwest::Client) -> Self {
-        self.client = Some(client.clone());
-        self
-    }
-    #[cfg(feature = "leaky-bucket")]
-    pub fn limiter(mut self, limiter: leaky_bucket::RateLimiter) -> Self {
-        self.limiter = Some(limiter);
-        self
-    }
-    pub fn build(self) -> Result<FogbugzApi, FogbugzApiBuilderError> {
-        let url = self.url.ok_or(FogbugzApiBuilderError::MissingUrl)?;
-        let api_key = self.api_key.ok_or(FogbugzApiBuilderError::MissingApiKey)?;
-        #[cfg(feature = "leaky-bucket")]
-        let limiter = self.limiter.ok_or(FogbugzApiBuilderError::MissingLimiter)?;
-        let client = self.client.unwrap_or_default();
-        Ok(FogbugzApi {
+    pub fn new_from_env() -> Self {
+        let url = std::env::var("FOGBUGZ_URL").expect("FOGBUGZ_URL environment variable not set");
+        let api_key =
+            std::env::var("FOGBUGZ_API_KEY").expect("FOGBUGZ_API_KEY environment variable not set");
+        Self {
             url,
             api_key,
-            #[cfg(feature = "leaky-bucket")]
-            limiter: Arc::new(limiter),
-            client,
-        })
+            client: reqwest::Client::default(),
+        }
     }
-}
+    pub fn list_cases(
+        &self,
+    ) -> list_cases::ListCasesRequestBuilder<list_cases::list_cases_request_builder::SetClient>
+    {
+        list_cases::ListCasesRequest::builder().client(self.clone())
+    }
+    pub fn case_details(
+        &self,
+    ) -> case_details::CaseDetailsRequestBuilder<
+        case_details::case_details_request_builder::SetClient,
+    > {
+        case_details::CaseDetailsRequest::builder().client(self.clone())
+    }
+    pub fn search(
+        &self,
+    ) -> search::SearchRequestBuilder<search::search_request_builder::SetClient> {
+        search::SearchRequest::builder().client(self.clone())
+    }
+    pub fn list_intervals(
+        &self,
+    ) -> list_intervals::ListIntervalsRequestBuilder<
+        list_intervals::list_intervals_request_builder::SetClient,
+    > {
+        list_intervals::ListIntervalsRequest::builder().client(self.clone())
+    }
 
-impl FogbugzApi {
-    pub fn list_cases(&self) -> list_cases::ListCasesRequestBuilder {
-        list_cases::ListCasesRequestBuilder::new().api(self.clone())
+    // Case Management Operations
+    pub fn new_case(
+        &self,
+    ) -> case_management::NewCaseRequestBuilder<case_management::new_case_request_builder::SetClient>
+    {
+        case_management::NewCaseRequest::builder().client(self.clone())
     }
-    pub fn case_details(&self) -> case_details::CaseDetailsRequestBuilder {
-        case_details::CaseDetailsRequestBuilder::new().api(self.clone())
+
+    pub fn edit_case(
+        &self,
+    ) -> case_management::EditCaseRequestBuilder<
+        case_management::edit_case_request_builder::SetClient,
+    > {
+        case_management::EditCaseRequest::builder().client(self.clone())
     }
-    pub fn search(&self) -> search::SearchRequestBuilder {
-        search::SearchRequestBuilder::new().api(self.clone())
+
+    pub fn assign_case(
+        &self,
+    ) -> case_management::AssignCaseRequestBuilder<
+        case_management::assign_case_request_builder::SetClient,
+    > {
+        case_management::AssignCaseRequest::builder().client(self.clone())
     }
-    pub fn list_intervals(&self) -> list_intervals::ListIntervalsRequestBuilder {
-        list_intervals::ListIntervalsRequestBuilder::new().api(self.clone())
+
+    pub fn resolve_case(
+        &self,
+    ) -> case_management::ResolveCaseRequestBuilder<
+        case_management::resolve_case_request_builder::SetClient,
+    > {
+        case_management::ResolveCaseRequest::builder().client(self.clone())
+    }
+
+    pub fn reactivate_case(
+        &self,
+    ) -> case_management::ReactivateCaseRequestBuilder<
+        case_management::reactivate_case_request_builder::SetClient,
+    > {
+        case_management::ReactivateCaseRequest::builder().client(self.clone())
+    }
+
+    pub fn close_case(
+        &self,
+    ) -> case_management::CloseCaseRequestBuilder<
+        case_management::close_case_request_builder::SetClient,
+    > {
+        case_management::CloseCaseRequest::builder().client(self.clone())
+    }
+
+    // Time Tracking Operations
+    pub fn start_work(
+        &self,
+    ) -> time_tracking::StartWorkRequestBuilder<time_tracking::start_work_request_builder::SetClient>
+    {
+        time_tracking::StartWorkRequest::builder().client(self.clone())
+    }
+
+    pub fn stop_work(
+        &self,
+    ) -> time_tracking::StopWorkRequestBuilder<time_tracking::stop_work_request_builder::SetClient>
+    {
+        time_tracking::StopWorkRequest::builder().client(self.clone())
+    }
+
+    pub fn new_interval(
+        &self,
+    ) -> time_tracking::NewIntervalRequestBuilder<
+        time_tracking::new_interval_request_builder::SetClient,
+    > {
+        time_tracking::NewIntervalRequest::builder().client(self.clone())
     }
 }
 
