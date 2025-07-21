@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
 use strum::{AsRefStr, Display, EnumString};
 
 #[derive(Debug, AsRefStr, Display, EnumString)]
@@ -42,8 +41,7 @@ pub enum Column {
     CustomFields,
 }
 
-#[derive(Debug, Deserialize_repr, strum::Display)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, strum::Display)]
 #[repr(u8)]
 pub enum Category {
     Bug = 1,
@@ -52,6 +50,26 @@ pub enum Category {
     Schedule = 4,
     Report = 5,
     Emergency = 6,
+    Review = 7,
+}
+
+impl<'de> Deserialize<'de> for Category {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            1 => Ok(Category::Bug),
+            2 => Ok(Category::Feature),
+            3 => Ok(Category::Inquiry),
+            4 => Ok(Category::Schedule),
+            5 => Ok(Category::Report),
+            6 => Ok(Category::Emergency),
+            7 => Ok(Category::Review),
+            _ => Err(serde::de::Error::custom(format!("invalid category value: {}", value))),
+        }
+    }
 }
 
 impl Serialize for Category {
@@ -65,7 +83,7 @@ impl Serialize for Category {
     }
 }
 
-#[derive(Debug, Deserialize_repr, strum::Display)]
+#[derive(Debug, strum::Display)]
 #[repr(u8)]
 pub enum Priority {
     Blocker = 1,
@@ -75,6 +93,25 @@ pub enum Priority {
     OhWell = 5,
     WhoCares = 6,
     DontFix = 7,
+}
+
+impl<'de> Deserialize<'de> for Priority {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            1 => Ok(Priority::Blocker),
+            2 => Ok(Priority::MuyImportante),
+            3 => Ok(Priority::ShouldDo),
+            4 => Ok(Priority::FixIfTime),
+            5 => Ok(Priority::OhWell),
+            6 => Ok(Priority::WhoCares),
+            7 => Ok(Priority::DontFix),
+            _ => Err(serde::de::Error::custom(format!("invalid priority value: {}", value))),
+        }
+    }
 }
 
 impl Serialize for Priority {
