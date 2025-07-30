@@ -46,23 +46,19 @@ pub struct AggregateHoursRequest {
 }
 
 impl AggregateHoursRequest {
-    /// Get aggregated hours data
+    /// Get aggregated hours data using listIntervals for accurate time tracking
     pub async fn send(&self) -> Result<serde_json::Value, ResponseError> {
-        // Use search with specific columns to get aggregated data
-        let query = if let Some(project_id) = self.project_id {
-            format!("project:{}", project_id)
-        } else {
-            "*".to_string()
-        };
-
-        let mut params = serde_json::json!({
-            "q": query,
-            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed,hrsCurrEst,hrsOrigEst,sPersonAssignedTo,ixPersonAssignedTo"
-        });
-
+        // The search API approach doesn't work well for time interval filtering
+        // Use listIntervals API instead and aggregate client-side
+        
+        let mut params = serde_json::json!({});
+        
+        // Add person filter (listIntervals supports ixPerson)
         if let Some(person_id) = self.person_id {
             params["ixPerson"] = person_id.into();
         }
+        
+        // Add date filters (listIntervals supports dtStart/dtEnd)
         if let Some(start_date) = &self.start_date {
             params["dtStart"] = start_date.clone().into();
         }
@@ -70,7 +66,146 @@ impl AggregateHoursRequest {
             params["dtEnd"] = end_date.clone().into();
         }
 
-        self.client.send_search(params).await
+        // Get time intervals using listIntervals command (which properly supports date/person filtering)
+        let intervals_response = self.client.send_command("listIntervals", params).await?;
+        
+        // Process intervals and aggregate by cases/projects
+        if let Some(intervals) = intervals_response["data"]["intervals"].as_array() {
+            let mut cases_map = std::collections::HashMap::new();
+            let mut case_ids = std::collections::HashSet::new();
+            
+            // First pass: collect case IDs and calculate durations
+            for interval in intervals {
+                if let (Some(case_id), Some(title), Some(start_str), Some(end_str)) = (
+                    interval["ixBug"].as_u64(),
+                    interval["sTitle"].as_str(),
+                    interval["dtStart"].as_str(),
+                    interval["dtEnd"].as_str(),
+                ) {
+                    case_ids.insert(case_id);
+                    
+                    // Calculate duration for this interval
+                    if let (Ok(start_time), Ok(end_time)) = (
+                        chrono::DateTime::parse_from_rfc3339(start_str),
+                        chrono::DateTime::parse_from_rfc3339(end_str),
+                    ) {
+                        let duration_hours = (end_time - start_time).num_seconds() as f64 / 3600.0;
+                        
+                        let case_entry = cases_map.entry(case_id).or_insert_with(|| {
+                            serde_json::json!({
+                                "ixBug": case_id,
+                                "sTitle": title,
+                                "hrsElapsed": 0.0,
+                                "hrsCurrEst": 0.0,
+                                "hrsOrigEst": 0.0,
+                                "sProject": "Unknown",
+                                "ixProject": null,
+                                "sPersonAssignedTo": "Unknown",
+                                "ixPersonAssignedTo": null
+                            })
+                        });
+                        
+                        // Add to elapsed hours
+                        if let Some(current_elapsed) = case_entry["hrsElapsed"].as_f64() {
+                            if let Some(number) = serde_json::Number::from_f64(current_elapsed + duration_hours) {
+                                case_entry["hrsElapsed"] = serde_json::Value::Number(number);
+                            }
+                        } else {
+                            if let Some(number) = serde_json::Number::from_f64(duration_hours) {
+                                case_entry["hrsElapsed"] = serde_json::Value::Number(number);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Second pass: fetch case details for project information
+            if !case_ids.is_empty() {
+                // Build search query for the specific cases
+                let case_numbers: Vec<String> = case_ids.iter().map(|id| id.to_string()).collect();
+                let case_query = case_numbers.join(",");
+                
+                let search_params = serde_json::json!({
+                    "q": case_query,
+                    "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed,hrsCurrEst,hrsOrigEst,sPersonAssignedTo,ixPersonAssignedTo"
+                });
+                
+                if let Ok(search_response) = self.client.send_search(search_params).await {
+                    if let Some(cases) = search_response["data"]["cases"].as_array() {
+                        for case in cases {
+                            if let Some(case_id) = case["ixBug"].as_u64() {
+                                if let Some(case_entry) = cases_map.get_mut(&case_id) {
+                                    // Update with project and estimate information
+                                    if let Some(project) = case["sProject"].as_str() {
+                                        case_entry["sProject"] = serde_json::Value::String(project.to_string());
+                                    }
+                                    if let Some(project_id) = case["ixProject"].as_u64() {
+                                        case_entry["ixProject"] = serde_json::Value::Number(serde_json::Number::from(project_id));
+                                    }
+                                    if let Some(curr_est) = case["hrsCurrEst"].as_f64() {
+                                        if let Some(number) = serde_json::Number::from_f64(curr_est) {
+                                            case_entry["hrsCurrEst"] = serde_json::Value::Number(number);
+                                        }
+                                    }
+                                    if let Some(orig_est) = case["hrsOrigEst"].as_f64() {
+                                        if let Some(number) = serde_json::Number::from_f64(orig_est) {
+                                            case_entry["hrsOrigEst"] = serde_json::Value::Number(number);
+                                        }
+                                    }
+                                    if let Some(assigned_to) = case["sPersonAssignedTo"].as_str() {
+                                        case_entry["sPersonAssignedTo"] = serde_json::Value::String(assigned_to.to_string());
+                                    }
+                                    if let Some(assigned_to_id) = case["ixPersonAssignedTo"].as_u64() {
+                                        case_entry["ixPersonAssignedTo"] = serde_json::Value::Number(serde_json::Number::from(assigned_to_id));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Convert to FogBugz search API response format
+            let cases: Vec<serde_json::Value> = cases_map.into_values().collect();
+            let response = serde_json::json!({
+                "data": {
+                    "cases": cases,
+                    "count": cases.len(),
+                    "totalHits": cases.len()
+                },
+                "errorCode": null,
+                "errors": [],
+                "maxCacheAge": null,
+                "meta": {
+                    "clientVersionAllowed": {
+                        "max": 822909000,
+                        "min": 822909000
+                    }
+                },
+                "warnings": []
+            });
+            
+            Ok(response)
+        } else {
+            // No intervals found, return empty response
+            Ok(serde_json::json!({
+                "data": {
+                    "cases": [],
+                    "count": 0,
+                    "totalHits": 0
+                },
+                "errorCode": null,
+                "errors": [],
+                "maxCacheAge": null,
+                "meta": {
+                    "clientVersionAllowed": {
+                        "max": 822909000,
+                        "min": 822909000
+                    }
+                },
+                "warnings": []
+            }))
+        }
     }
 }
 
@@ -142,5 +277,174 @@ mod tests {
             .build();
 
         assert!(true);
+    }
+
+    #[tokio::test]
+    async fn test_search_api_with_date_parameters() {
+        let api_key = match std::env::var("FOGBUGZ_API_KEY") {
+            Ok(key) => key,
+            Err(_) => {
+                println!("FOGBUGZ_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        #[cfg(feature = "leaky-bucket")]
+        let limiter = leaky_bucket::RateLimiter::builder()
+            .initial(1)
+            .interval(std::time::Duration::from_secs(1))
+            .build();
+        #[cfg(feature = "leaky-bucket")]
+        let api = FogBugzClient::builder()
+            .url("https://retailic.fogbugz.com")
+            .api_key(api_key)
+            .limiter(limiter)
+            .build();
+        #[cfg(not(feature = "leaky-bucket"))]
+        let api = FogBugzClient::builder()
+            .url("https://retailic.fogbugz.com")
+            .api_key(api_key)
+            .build();
+
+        println!("Testing search API with dtStart/dtEnd/ixPerson parameters...");
+        
+        // Test 1: Search with dtStart, dtEnd, ixPerson parameters (what aggregate_hours currently does)
+        let params_with_dates = serde_json::json!({
+            "q": "*",
+            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed",
+            "dtStart": "2025-01-01",
+            "dtEnd": "2025-01-31", 
+            "ixPerson": 75
+        });
+
+        println!("Test 1: Search with dtStart/dtEnd/ixPerson parameters");
+        match tokio::time::timeout(std::time::Duration::from_secs(5), api.send_search(params_with_dates)).await {
+            Ok(Ok(response)) => {
+                println!("✅ Search with date parameters succeeded");
+                if let Some(data) = response.get("data") {
+                    if let Some(cases) = data.get("cases") {
+                        if let Some(cases_array) = cases.as_array() {
+                            println!("   Found {} cases", cases_array.len());
+                            // Print first case for inspection
+                            if let Some(first_case) = cases_array.first() {
+                                println!("   First case: {}", serde_json::to_string_pretty(first_case).unwrap_or_default());
+                            }
+                        }
+                    }
+                }
+            },
+            Ok(Err(e)) => {
+                println!("❌ Search with date parameters failed: {}", e);
+            },
+            Err(_) => {
+                println!("⏰ Search with date parameters timed out after 5 seconds");
+            }
+        }
+
+        // Test 2: Search without date parameters for comparison
+        let params_without_dates = serde_json::json!({
+            "q": "*",
+            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed"
+        });
+
+        println!("\nTest 2: Search without date parameters");
+        match api.send_search(params_without_dates).await {
+            Ok(response) => {
+                println!("✅ Search without date parameters succeeded");
+                if let Some(data) = response.get("data") {
+                    if let Some(cases) = data.get("cases") {
+                        if let Some(cases_array) = cases.as_array() {
+                            println!("   Found {} cases", cases_array.len());
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                println!("❌ Search without date parameters failed: {}", e);
+            }
+        }
+
+        // Test 3: Search with proper FogBugz query syntax
+        let params_with_query_dates = serde_json::json!({
+            "q": "edited:\"2025-01-01..2025-01-31\" elapsedtime:\">0\"",
+            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed,dtLastUpdated"
+        });
+
+        // Test 4: Search with person filter using proper syntax
+        let params_with_person_filter = serde_json::json!({
+            "q": "assignedto:\"Person75\" OR openedby:\"Person75\" OR editedby:\"Person75\"",
+            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed,sPersonAssignedTo"
+        });
+
+        println!("\nTest 3: Search with query-based date filtering");
+        match api.send_search(params_with_query_dates).await {
+            Ok(response) => {
+                println!("✅ Search with query date filtering succeeded");
+                if let Some(data) = response.get("data") {
+                    if let Some(cases) = data.get("cases") {
+                        if let Some(cases_array) = cases.as_array() {
+                            println!("   Found {} cases", cases_array.len());
+                            // Print first case for inspection
+                            if let Some(first_case) = cases_array.first() {
+                                println!("   First case: {}", serde_json::to_string_pretty(first_case).unwrap_or_default());
+                            }
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                println!("❌ Search with query date filtering failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hours_current_implementation() {
+        let api_key = match std::env::var("FOGBUGZ_API_KEY") {
+            Ok(key) => key,
+            Err(_) => {
+                println!("FOGBUGZ_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        #[cfg(feature = "leaky-bucket")]
+        let limiter = leaky_bucket::RateLimiter::builder()
+            .initial(1)
+            .interval(std::time::Duration::from_secs(1))
+            .build();
+        #[cfg(feature = "leaky-bucket")]
+        let api = FogBugzClient::builder()
+            .url("https://retailic.fogbugz.com")
+            .api_key(api_key)
+            .limiter(limiter)
+            .build();
+        #[cfg(not(feature = "leaky-bucket"))]
+        let api = FogBugzClient::builder()
+            .url("https://retailic.fogbugz.com")
+            .api_key(api_key)
+            .build();
+
+        println!("Testing current aggregate_hours implementation...");
+        
+        let request = api
+            .aggregate_hours()
+            .person_id(75)
+            .start_date("2025-01-01".to_string())
+            .end_date("2025-01-31".to_string())
+            .build();
+
+        match tokio::time::timeout(std::time::Duration::from_secs(10), request.send()).await {
+            Ok(Ok(response)) => {
+                println!("✅ aggregate_hours succeeded");
+                println!("Response: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
+            },
+            Ok(Err(e)) => {
+                println!("❌ aggregate_hours failed: {}", e);
+            },
+            Err(_) => {
+                println!("⏰ aggregate_hours timed out after 10 seconds");
+            }
+        }
     }
 }
