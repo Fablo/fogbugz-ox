@@ -1,7 +1,7 @@
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::{enums::Column, filter::FogBugzSearchBuilder, FogBugzClient, ResponseError};
+use crate::{FogBugzClient, ResponseError, enums::Column, filter::FogBugzSearchBuilder};
 
 #[derive(Debug, Serialize, Builder)]
 #[builder(state_mod(vis = "pub(crate)"))]

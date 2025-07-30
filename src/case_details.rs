@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    enums::{Category, Column, Priority, Status},
     FogBugzClient, ResponseError,
+    enums::{Category, Column, Priority, Status},
 };
 
 #[derive(Debug, Serialize, Builder)]

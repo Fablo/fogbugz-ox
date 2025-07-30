@@ -513,7 +513,10 @@ mod tests {
             .or(|or| or.assigned_to("Tester 1").assigned_to("Tester 2"))
             .or(|or| or.resolved_by("Developer1").resolved_by("Developer2"))
             .build();
-        assert_eq!(query, "newfeature (assignedto:\"Tester 1\" OR assignedto:\"Tester 2\") (resolvedby:Developer1 OR resolvedby:Developer2)");
+        assert_eq!(
+            query,
+            "newfeature (assignedto:\"Tester 1\" OR assignedto:\"Tester 2\") (resolvedby:Developer1 OR resolvedby:Developer2)"
+        );
     }
 
     #[test]

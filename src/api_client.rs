@@ -50,14 +50,19 @@ impl FogBugzClient {
         }
     }
 
-
     /// Send a search command (internal API method)
-    pub(crate) async fn send_search<T: Serialize>(&self, params: T) -> Result<Value, ResponseError> {
+    pub(crate) async fn send_search<T: Serialize>(
+        &self,
+        params: T,
+    ) -> Result<Value, ResponseError> {
         self.send_command("search", params).await
     }
 
     /// Send a listCases command (internal API method)
-    pub(crate) async fn send_list_cases<T: Serialize>(&self, params: T) -> Result<Value, ResponseError> {
+    pub(crate) async fn send_list_cases<T: Serialize>(
+        &self,
+        params: T,
+    ) -> Result<Value, ResponseError> {
         self.send_command("listCases", params).await
     }
 

@@ -2,7 +2,7 @@ use bon::Builder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{enums::Category, FogBugzClient, ResponseError};
+use crate::{FogBugzClient, ResponseError, enums::Category};
 
 /// Request to create a new case
 #[derive(Debug, Serialize, Builder)]
@@ -74,14 +74,13 @@ impl NewCaseRequest {
         let response = self.client.send_command("new", self).await?;
 
         // Extract the case ID from the response
-        let case_id = response["data"]["case"]["ixBug"]
-            .as_u64()
-            .ok_or_else(|| {
-                use std::io;
-                ResponseError::JsonError(serde_json::Error::io(
-                    io::Error::new(io::ErrorKind::InvalidData, "Missing or invalid case ID in response")
-                ))
-            })? as u64;
+        let case_id = response["data"]["case"]["ixBug"].as_u64().ok_or_else(|| {
+            use std::io;
+            ResponseError::JsonError(serde_json::Error::io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing or invalid case ID in response",
+            )))
+        })? as u64;
 
         Ok(NewCaseResponse { case_id })
     }
@@ -306,11 +305,7 @@ mod tests {
             .build();
 
         // Test assign case builder
-        let _assign_request = api
-            .assign_case()
-            .case_id(123)
-            .assigned_to_id(456)
-            .build();
+        let _assign_request = api.assign_case().case_id(123).assigned_to_id(456).build();
 
         // Test resolve case builder
         let _resolve_request = api

@@ -137,15 +137,15 @@ mod tests {
             .assigned_to("John Doe")
             .case_id(123)
             .build();
-        
+
         let query_string = query.to_string();
-        
+
         // Should use spaces, not ampersands to separate query parts
         assert!(query_string.contains(" "));
         assert!(!query_string.contains("&"));
         assert!(query_string.contains("ixBug:123"));
         assert!(query_string.contains("assignedTo:John Doe"));
-        
+
         // Verify the correct format
         assert_eq!(query_string, "ixBug:123 assignedTo:John Doe");
     }
@@ -153,15 +153,15 @@ mod tests {
     #[test]
     fn test_query_with_dates() {
         use crate::date::PointInTime;
-        
+
         let query = Query::builder()
             .opened_date(PointInTime::new(1, 1, 2024))
             .closed_date(PointInTime::new(31, 12, 2024))
             .build();
-        
+
         let query_string = query.to_string();
         println!("Query string: '{}'", query_string);
-        
+
         // Should use spaces to separate query parts
         assert!(query_string.contains(" "));
         assert!(!query_string.contains("&"));

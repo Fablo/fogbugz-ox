@@ -39,6 +39,21 @@ pub enum Column {
     #[strum(serialize = "customFields", to_string = "customFields")]
     #[strum(serialize = "customfields")]
     CustomFields,
+    #[strum(serialize = "hrsElapsed", to_string = "hrsElapsed")]
+    #[strum(serialize = "hrselapsed")]
+    HoursElapsed,
+    #[strum(serialize = "hrsCurrEst", to_string = "hrsCurrEst")]
+    #[strum(serialize = "hrscurrest")]
+    HoursCurrentEstimate,
+    #[strum(serialize = "hrsOrigEst", to_string = "hrsOrigEst")]
+    #[strum(serialize = "hrsorigest")]
+    HoursOriginalEstimate,
+    #[strum(serialize = "sPersonAssignedTo", to_string = "sPersonAssignedTo")]
+    #[strum(serialize = "assignedto")]
+    PersonAssignedTo,
+    #[strum(serialize = "dtLastUpdated", to_string = "dtLastUpdated")]
+    #[strum(serialize = "lastupdated")]
+    LastUpdated,
 }
 
 #[derive(Debug, strum::Display)]
@@ -67,7 +82,10 @@ impl<'de> Deserialize<'de> for Category {
             5 => Ok(Category::Report),
             6 => Ok(Category::Emergency),
             7 => Ok(Category::Review),
-            _ => Err(serde::de::Error::custom(format!("invalid category value: {}", value))),
+            _ => Err(serde::de::Error::custom(format!(
+                "invalid category value: {}",
+                value
+            ))),
         }
     }
 }
@@ -109,7 +127,10 @@ impl<'de> Deserialize<'de> for Priority {
             5 => Ok(Priority::OhWell),
             6 => Ok(Priority::WhoCares),
             7 => Ok(Priority::DontFix),
-            _ => Err(serde::de::Error::custom(format!("invalid priority value: {}", value))),
+            _ => Err(serde::de::Error::custom(format!(
+                "invalid priority value: {}",
+                value
+            ))),
         }
     }
 }

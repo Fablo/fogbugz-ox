@@ -151,7 +151,9 @@ pub struct Filter {
 impl FogBugzClient {
     /// List all projects
     pub async fn list_projects(&self) -> Result<Vec<Project>, ResponseError> {
-        let response = self.send_command("listProjects", serde_json::json!({})).await?;
+        let response = self
+            .send_command("listProjects", serde_json::json!({}))
+            .await?;
         let projects = serde_json::from_value(response["data"]["projects"].clone())?;
         Ok(projects)
     }
@@ -181,20 +183,27 @@ impl FogBugzClient {
 
     /// List all categories
     pub async fn list_categories(&self) -> Result<Vec<CategoryInfo>, ResponseError> {
-        let response = self.send_command("listCategories", serde_json::json!({})).await?;
+        let response = self
+            .send_command("listCategories", serde_json::json!({}))
+            .await?;
         let categories = serde_json::from_value(response["data"]["categories"].clone())?;
         Ok(categories)
     }
 
     /// List all priorities
     pub async fn list_priorities(&self) -> Result<Vec<Priority>, ResponseError> {
-        let response = self.send_command("listPriorities", serde_json::json!({})).await?;
+        let response = self
+            .send_command("listPriorities", serde_json::json!({}))
+            .await?;
         let priorities = serde_json::from_value(response["data"]["priorities"].clone())?;
         Ok(priorities)
     }
 
     /// List all statuses for a specific category
-    pub async fn list_statuses(&self, category_id: Option<u32>) -> Result<Vec<Status>, ResponseError> {
+    pub async fn list_statuses(
+        &self,
+        category_id: Option<u32>,
+    ) -> Result<Vec<Status>, ResponseError> {
         let mut params = serde_json::json!({});
         if let Some(id) = category_id {
             params["ixCategory"] = id.into();
@@ -205,7 +214,10 @@ impl FogBugzClient {
     }
 
     /// List milestones/FixFors for a specific project
-    pub async fn list_milestones(&self, project_id: Option<u32>) -> Result<Vec<Milestone>, ResponseError> {
+    pub async fn list_milestones(
+        &self,
+        project_id: Option<u32>,
+    ) -> Result<Vec<Milestone>, ResponseError> {
         let mut params = serde_json::json!({});
         if let Some(id) = project_id {
             params["ixProject"] = id.into();
@@ -246,18 +258,22 @@ impl FogBugzClient {
                             });
                         } else if let Some(filter_obj) = filter_item.as_object() {
                             // Complex filter object
-                            let id = filter_obj.get("sFilter")
+                            let id = filter_obj
+                                .get("sFilter")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let filter_type = filter_obj.get("type")
+                            let filter_type = filter_obj
+                                .get("type")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
-                            let name = filter_obj.get("#text")
+                            let name = filter_obj
+                                .get("#text")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
-                            let description = filter_obj.get("#cdata-section")
+                            let description = filter_obj
+                                .get("#cdata-section")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
 

@@ -4,6 +4,7 @@ pub mod case_management;
 pub mod date;
 pub mod enums;
 pub mod filter;
+pub mod hours_report;
 pub mod list_cases;
 pub mod list_intervals;
 pub mod organization;
@@ -58,6 +59,8 @@ impl FogBugzClient {
         Self {
             url: url.into(),
             api_key: api_key.into(),
+            #[cfg(feature = "leaky-bucket")]
+            limiter: None,
             client: reqwest::Client::default(),
         }
     }
@@ -68,6 +71,8 @@ impl FogBugzClient {
         Self {
             url,
             api_key,
+            #[cfg(feature = "leaky-bucket")]
+            limiter: None,
             client: reqwest::Client::default(),
         }
     }
@@ -88,6 +93,21 @@ impl FogBugzClient {
         &self,
     ) -> search::SearchRequestBuilder<search::search_request_builder::SetClient> {
         search::SearchRequest::builder().client(self.clone())
+    }
+
+    /// Create a search request specifically for time tracking data
+    pub fn search_time_tracking(&self, query: impl Into<String>) -> search::SearchRequest {
+        search::SearchRequest::for_time_tracking(self, query)
+    }
+
+    /// Create a search request for elapsed hours by project
+    pub fn search_project_hours(&self, project_name: impl Into<String>) -> search::SearchRequest {
+        search::SearchRequest::for_project_hours(self, project_name)
+    }
+
+    /// Create a search request for elapsed hours by person
+    pub fn search_person_hours(&self, person_name: impl Into<String>) -> search::SearchRequest {
+        search::SearchRequest::for_person_hours(self, person_name)
     }
     pub fn list_intervals(
         &self,
@@ -166,6 +186,23 @@ impl FogBugzClient {
         time_tracking::new_interval_request_builder::SetClient,
     > {
         time_tracking::NewIntervalRequest::builder().client(self.clone())
+    }
+
+    // Hours Reporting Operations
+    pub fn hours_remaining_report(
+        &self,
+    ) -> hours_report::HoursRemainingReportRequestBuilder<
+        hours_report::hours_remaining_report_request_builder::SetClient,
+    > {
+        hours_report::HoursRemainingReportRequest::builder().client(self.clone())
+    }
+
+    pub fn aggregate_hours(
+        &self,
+    ) -> hours_report::AggregateHoursRequestBuilder<
+        hours_report::aggregate_hours_request_builder::SetClient,
+    > {
+        hours_report::AggregateHoursRequest::builder().client(self.clone())
     }
 }
 

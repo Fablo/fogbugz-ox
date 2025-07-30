@@ -121,9 +121,8 @@ impl FogBugzClient {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, Utc};
     use crate::FogBugzClient;
-
+    use chrono::{Duration, Utc};
 
     #[test]
     fn test_time_tracking_builder_api() {
