@@ -57,7 +57,7 @@ impl AggregateHoursRequest {
 
         let mut params = serde_json::json!({
             "q": query,
-            "cols": "ixBug,sTitle,sProject,hrsElapsed,hrsCurrEst,hrsOrigEst,sPersonAssignedTo"
+            "cols": "ixBug,sTitle,sProject,ixProject,hrsElapsed,hrsCurrEst,hrsOrigEst,sPersonAssignedTo,ixPersonAssignedTo"
         });
 
         if let Some(person_id) = self.person_id {
@@ -83,6 +83,8 @@ pub struct CaseHours {
     pub title: String,
     #[serde(rename = "sProject")]
     pub project: String,
+    #[serde(rename = "ixProject")]
+    pub project_id: Option<u32>,
     #[serde(rename = "hrsElapsed")]
     pub hours_elapsed: Option<f64>,
     #[serde(rename = "hrsCurrEst")]
@@ -91,6 +93,8 @@ pub struct CaseHours {
     pub hours_original_estimate: Option<f64>,
     #[serde(rename = "sPersonAssignedTo")]
     pub assigned_to: String,
+    #[serde(rename = "ixPersonAssignedTo")]
+    pub assigned_to_id: Option<u32>,
 }
 
 /// Aggregated hours by project
