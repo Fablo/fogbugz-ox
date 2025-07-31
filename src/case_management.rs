@@ -133,6 +133,16 @@ pub struct EditCaseRequest {
     #[builder(into)]
     tags: Option<String>,
 
+    /// Current estimate in hours (optional)
+    #[serde(rename = "hrsCurrEst", skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
+    current_estimate: Option<f64>,
+
+    /// Extra elapsed hours to add (optional)
+    #[serde(rename = "hrsElapsedExtra", skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
+    elapsed_extra: Option<f64>,
+
     /// API instance
     #[serde(skip)]
     client: FogBugzClient,
